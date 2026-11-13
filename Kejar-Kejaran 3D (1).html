@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kejar-Kejaran 3D</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;800&display=swap">
+<style>
+:root{--panel:#f1f7f6;--ink:#10282b;--muted:#4b6a6d;--accent:#ff6b57;--accent-ink:#2a0d08;--line:#c5dad8;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--panel:#10282b;--ink:#eaf4f2;--muted:#9bbcbc;--line:#27474b}}
+:root[data-theme="dark"]{--panel:#10282b;--ink:#eaf4f2;--muted:#9bbcbc;--line:#27474b}
+html,body{height:100%;margin:0;background:#0d2226;overflow:hidden;overscroll-behavior:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;font-family:"Bricolage Grotesque",system-ui,sans-serif;color:var(--ink)}
+#joy{position:fixed;width:110px;height:110px;border-radius:50%;border:3px solid #ffffff66;background:#ffffff1f;pointer-events:none}
+#knob{position:absolute;left:31px;top:31px;width:48px;height:48px;border-radius:50%;background:#ffffffb3}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#hud{position:fixed;left:0;right:0;top:env(safe-area-inset-top,0px);display:flex;gap:12px;justify-content:space-between;padding:12px 16px;color:#eaf4f2;font-weight:800;font-size:20px;pointer-events:none;text-shadow:0 1px 4px #0008}
+#hud small{display:block;font-weight:500;font-size:12px;opacity:.8}
+#bar{height:6px;width:90px;background:#ffffff33;border-radius:3px;margin-top:4px;overflow:hidden}
+#bar i{display:block;height:100%;width:100%;background:var(--accent)}
+.ov{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px;background:#0d2226cc}
+.card{background:var(--panel);border-radius:14px;padding:24px;max-width:400px;width:100%;box-sizing:border-box}
+.card h1{margin:0 0 6px;font-size:32px;font-weight:800;line-height:1.1}
+.card p{margin:0 0 14px;color:var(--muted);line-height:1.5;font-weight:500}
+button{font:inherit;font-weight:800;border:0;border-radius:10px;padding:12px 16px;cursor:pointer;width:100%;margin-top:8px;background:var(--accent);color:var(--accent-ink)}
+button.alt{background:transparent;color:var(--ink);border:2px solid var(--line)}
+button:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+#dashBtn{position:fixed;right:18px;bottom:calc(22px + env(safe-area-inset-bottom,0px));width:84px;height:84px;border-radius:50%;margin:0;padding:0;font-size:14px;opacity:.9}
+.hide{display:none!important}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud" class="hide">
+  <div><span id="mode"></span><small id="best"></small></div>
+  <div style="text-align:center"><span id="time">0</span><small id="info"></small></div>
+  <div style="text-align:right"><span id="score">0</span><small>Tenaga lari</small><div id="bar" style="margin-left:auto"><i></i></div></div>
+</div>
+<button id="dashBtn" class="hide">Lari kencang</button>
+<div id="joy" class="hide"><div id="knob"></div></div>
+
+<div id="menu" class="ov"><div class="card">
+  <h1>Kejar-Kejaran</h1>
+  <p>Di HP: sentuh dan geser jari di mana saja untuk memunculkan joystick, lalu tekan tombol “Lari kencang” dengan jari lain. Di komputer: WASD atau panah, dan Spasi untuk lari kencang.</p>
+  <button id="m1">Kabur dari kejaran</button>
+  <p style="margin:6px 0 0;font-size:14px">Kumpulkan koin dan bertahan selama mungkin. Pengejar makin banyak.</p>
+  <button id="m2" class="alt">Kejar si pelari</button>
+  <p style="margin:6px 0 0;font-size:14px">Tangkap si hijau dalam 45 detik. Dia pintar menghindar.</p>
+  <button id="fs" class="alt">Layar penuh</button>
+</div></div>
+
+<div id="over" class="ov hide"><div class="card">
+  <h1 id="otitle"></h1><p id="otext"></p>
+  <button id="again">Main lagi</button><button id="tomenu" class="alt">Ke menu</button>
+</div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const SIZE=36,H=SIZE/2,R=.7;
+const renderer=new THREE.WebGLRenderer({antialias:true,canvas:$('#c')});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
+renderer.shadowMap.enabled=true;
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0d2226);
+scene.fog=new THREE.Fog(0x0d2226,32,70);
+const cam=new THREE.PerspectiveCamera(50,1,.1,120);
+scene.add(new THREE.HemisphereLight(0xdff6f2,0x1a3a3f,.95));
+const sun=new THREE.DirectionalLight(0xffffff,.8);
+sun.position.set(10,25,8);sun.castShadow=true;
+sun.shadow.mapSize.set(1024,1024);
+Object.assign(sun.shadow.camera,{left:-26,right:26,top:26,bottom:-26,near:1,far:70});
+scene.add(sun);
+
+// Arena
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(SIZE,SIZE),new THREE.MeshLambertMaterial({color:0x2b7a78}));
+floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
+const lineMat=new THREE.MeshBasicMaterial({color:0xe8f1ee});
+const ring=new THREE.Mesh(new THREE.RingGeometry(4.6,4.8,48),lineMat);ring.rotation.x=-Math.PI/2;ring.position.y=.01;scene.add(ring);
+const mid=new THREE.Mesh(new THREE.PlaneGeometry(SIZE,.2),lineMat);mid.rotation.x=-Math.PI/2;mid.position.y=.01;scene.add(mid);
+const wallMat=new THREE.MeshLambertMaterial({color:0x17333a});
+[[0,-H-.5,SIZE+2,1],[0,H+.5,SIZE+2,1],[-H-.5,0,1,SIZE],[H+.5,0,1,SIZE]].forEach(([x,z,w,d])=>{
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,1.6,d),wallMat);m.position.set(x,.8,z);scene.add(m);});
+const obs=[[-8,-6,4,4],[8,-6,4,4],[0,0,5,2],[-9,7,2,6],[9,7,2,6],[0,11,6,2],[0,-12,6,2]].map(([x,z,w,d])=>({x,z,w,d}));
+const obsMat=new THREE.MeshLambertMaterial({color:0xf2c14e});
+obs.forEach(o=>{const m=new THREE.Mesh(new THREE.BoxGeometry(o.w,2,o.d),obsMat);m.position.set(o.x,1,o.z);m.castShadow=m.receiveShadow=true;scene.add(m);});
+
+function resolve(p,r){
+  const L=H-r;p.x=Math.max(-L,Math.min(L,p.x));p.z=Math.max(-L,Math.min(L,p.z));
+  for(const o of obs){
+    const hx=o.w/2,hz=o.d/2;
+    const cx=Math.max(o.x-hx,Math.min(p.x,o.x+hx)),cz=Math.max(o.z-hz,Math.min(p.z,o.z+hz));
+    const dx=p.x-cx,dz=p.z-cz,d2=dx*dx+dz*dz;
+    if(d2<r*r){
+      if(d2>1e-6){const d=Math.sqrt(d2);p.x=cx+dx/d*r;p.z=cz+dz/d*r;}else p.x=o.x+hx+r;
+    }
+  }
+}
+const white=new THREE.MeshLambertMaterial({color:0xffffff}),dark=new THREE.MeshLambertMaterial({color:0x111111});
+function makeChar(col){
+  const g=new THREE.Group();
+  const b=new THREE.Mesh(new THREE.SphereGeometry(R,24,16),new THREE.MeshLambertMaterial({color:col}));
+  b.position.y=R;b.castShadow=true;g.add(b);
+  for(const s of[-1,1]){
+    const e=new THREE.Mesh(new THREE.SphereGeometry(.2,12,8),white);e.position.set(s*.28,.95,.55);g.add(e);
+    const p=new THREE.Mesh(new THREE.SphereGeometry(.09,8,8),dark);p.position.set(s*.28,.95,.72);g.add(p);
+  }
+  scene.add(g);return g;
+}
+function ent(col,x,z){return{mesh:makeChar(col),pos:{x,z},vx:0,vz:0,blocked:false,avoid:0,side:1,lead:0,dash:0,cd:0,dx:0,dz:1};}
+function angDiff(a,b){return((a-b+Math.PI)%(2*Math.PI)+2*Math.PI)%(2*Math.PI)-Math.PI;}
+function move(e,dx,dz,sp,dt,t){
+  const ox=e.pos.x,oz=e.pos.z;
+  e.pos.x+=dx*sp*dt;e.pos.z+=dz*sp*dt;resolve(e.pos,R);
+  const moved=Math.hypot(e.pos.x-ox,e.pos.z-oz);
+  const moving=dx!==0||dz!==0;
+  e.blocked=moving&&moved<sp*dt*.4;
+  e.vx=(e.pos.x-ox)/dt;e.vz=(e.pos.z-oz)/dt;
+  if(moving)e.mesh.rotation.y-=angDiff(e.mesh.rotation.y,Math.atan2(dx,dz))*Math.min(1,dt*12);
+  e.mesh.position.set(e.pos.x,moving?Math.abs(Math.sin(t*12))*.15:0,e.pos.z);
+}
+
+// Input
+const keys={};let touch={x:0,z:0},orig=null,dashReq=false;
+addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='Space'||e.code==='ShiftLeft')dashReq=true;if(e.code.startsWith('Arrow')||e.code==='Space')e.preventDefault();});
+addEventListener('keyup',e=>keys[e.code]=false);
+const cv=$('#c');
+const joy=$('#joy'),knob=$('#knob');let pid=null;
+cv.addEventListener('pointerdown',e=>{
+  if(pid!==null)return;pid=e.pointerId;orig={x:e.clientX,y:e.clientY};cv.setPointerCapture(e.pointerId);
+  if(e.pointerType!=='mouse'){joy.style.left=(e.clientX-55)+'px';joy.style.top=(e.clientY-55)+'px';joy.classList.remove('hide');knob.style.transform='';}
+});
+cv.addEventListener('pointermove',e=>{
+  if(e.pointerId!==pid)return;
+  let x=(e.clientX-orig.x)/50,z=(e.clientY-orig.y)/50;const l=Math.hypot(x,z);if(l>1){x/=l;z/=l;}
+  touch={x,z};knob.style.transform='translate('+x*50+'px,'+z*50+'px)';
+});
+const endT=e=>{if(e.pointerId!==pid)return;pid=null;orig=null;touch={x:0,z:0};joy.classList.add('hide');};
+cv.addEventListener('pointerup',endT);cv.addEventListener('pointercancel',endT);
+$('#dashBtn').addEventListener('pointerdown',e=>{e.stopPropagation();dashReq=true;});
+function getInput(){
+  let x=(keys.KeyD||keys.ArrowRight?1:0)-(keys.KeyA||keys.ArrowLeft?1:0);
+  let z=(keys.KeyS||keys.ArrowDown?1:0)-(keys.KeyW||keys.ArrowUp?1:0);
+  if(!x&&!z){x=touch.x;z=touch.z;}
+  const l=Math.hypot(x,z);if(l>1){x/=l;z/=l;}
+  return{x:l<.15?0:x,z:l<.15?0:z};
+}
+
+// Game state
+let mode=0,state='menu',t=0,score=0,P,chasers=[],runner,coin,coinMesh,nextAdd=0,left=0;
+const corners=[[-15,-15],[15,-15],[-15,15],[15,15]];
+const coinGeo=new THREE.CylinderGeometry(.45,.45,.12,20),coinMat=new THREE.MeshLambertMaterial({color:0xffd166,emissive:0x665000});
+coinMesh=new THREE.Mesh(coinGeo,coinMat);coinMesh.rotation.x=Math.PI/2;
+const coinG=new THREE.Group();coinG.add(coinMesh);coinG.position.y=1;scene.add(coinG);coinG.visible=false;
+
+function clearAll(){
+  [P,runner,...chasers].forEach(e=>e&&scene.remove(e.mesh));chasers=[];P=runner=null;
+}
+function addChaser(){
+  const far=corners.map(c=>({c,d:Math.hypot(c[0]-P.pos.x,c[1]-P.pos.z)})).sort((a,b)=>b.d-a.d)[Math.floor(Math.random()*2)].c;
+  const c=ent(0x2a3a9c,far[0],far[1]);c.lead=chasers.length*.35;c.side=Math.random()<.5?-1:1;
+  chasers.push(c);
+}
+function placeCoin(){
+  for(let i=0;i<50;i++){
+    const q={x:(Math.random()-.5)*(SIZE-4),z:(Math.random()-.5)*(SIZE-4)},px=q.x,pz=q.z;
+    resolve(q,1);
+    if(Math.hypot(q.x-px,q.z-pz)<.01&&Math.hypot(px-P.pos.x,pz-P.pos.z)>6){coin={x:px,z:pz};break;}
+  }
+  coinG.position.set(coin.x,1,coin.z);
+}
+function bestKey(){return'kejar-best-'+mode;}
+function getBest(){try{return+localStorage.getItem(bestKey())||0}catch(e){return 0}}
+function setBest(v){try{localStorage.setItem(bestKey(),v)}catch(e){}}
+
+function start(m){
+  mode=m;clearAll();t=0;score=0;state='play';
+  P=ent(0xff6b57,0,6);
+  if(m===1){
+    for(let i=0;i<3;i++)addChaser();
+    nextAdd=10;placeCoin();coinG.visible=true;
+    $('#mode').textContent='Kabur';$('#info').textContent='Waktu bertahan';
+  }else{
+    runner=ent(0xb8e04a,0,-6);left=45;coinG.visible=false;
+    $('#mode').textContent='Kejar';$('#info').textContent='Sisa waktu';
+  }
+  $('#best').textContent='Rekor '+getBest();
+  ['#menu','#over'].forEach(s=>$(s).classList.add('hide'));
+  ['#hud','#dashBtn'].forEach(s=>$(s).classList.remove('hide'));
+}
+function finish(title,text,pts){
+  state='over';
+  if(pts>getBest())setBest(pts);
+  if(navigator.vibrate)navigator.vibrate(200);
+  $('#otitle').textContent=title;$('#otext').textContent=text;
+  $('#over').classList.remove('hide');$('#dashBtn').classList.add('hide');
+}
+$('#m1').onclick=()=>start(1);$('#m2').onclick=()=>start(2);
+$('#fs').onclick=()=>{try{const d=document.documentElement;if(document.fullscreenElement)document.exitFullscreen();else if(d.requestFullscreen)d.requestFullscreen();}catch(e){}};
+$('#again').onclick=()=>start(mode);
+$('#tomenu').onclick=()=>{state='menu';clearAll();coinG.visible=false;['#over','#hud','#dashBtn'].forEach(s=>$(s).classList.add('hide'));$('#menu').classList.remove('hide');};
+
+function update(dt){
+  t+=dt;
+  // Pemain
+  const inp=getInput();
+  const base=mode===1?6.5:6.2;
+  if(dashReq&&P.cd<=0){P.dash=.35;P.cd=2.2;}
+  dashReq=false;P.dash-=dt;P.cd-=dt;
+  move(P,inp.x,inp.z,P.dash>0?base*1.8:base,dt,t);
+  $('#bar i').style.width=Math.max(0,Math.min(1,1-P.cd/2.2))*100+'%';
+
+  if(mode===1){
+    if(t>nextAdd&&chasers.length<7){addChaser();nextAdd+=10;}
+    const sp=3.6+Math.min(t/60,1.2);
+    for(const c of chasers){
+      let dx=P.pos.x+P.vx*c.lead-c.pos.x,dz=P.pos.z+P.vz*c.lead-c.pos.z;
+      let d=Math.hypot(dx,dz)||1;dx/=d;dz/=d;
+      if(c.avoid>0){c.avoid-=dt;const a=c.side*1.1,cs=Math.cos(a),sn=Math.sin(a);[dx,dz]=[dx*cs-dz*sn,dx*sn+dz*cs];}
+      for(const o of chasers)if(o!==c){
+        const ax=c.pos.x-o.pos.x,az=c.pos.z-o.pos.z,dd=Math.hypot(ax,az);
+        if(dd>0&&dd<2){dx+=ax/dd*(2-dd)*.6;dz+=az/dd*(2-dd)*.6;}
+      }
+      d=Math.hypot(dx,dz)||1;dx/=d;dz/=d;
+      move(c,dx,dz,sp,dt,t);
+      if(c.blocked&&c.avoid<=0){c.avoid=.6;c.side=Math.random()<.5?-1:1;}
+      if(Math.hypot(c.pos.x-P.pos.x,c.pos.z-P.pos.z)<1.3){
+        const pts=score*10+Math.floor(t);
+        finish('Tertangkap!','Kamu bertahan '+Math.floor(t)+' detik dan mengumpulkan '+score+' koin. Skor '+pts+(pts>getBest()?' (rekor baru!)':'')+'.',pts);
+        return;
+      }
+    }
+    if(Math.hypot(coin.x-P.pos.x,coin.z-P.pos.z)<1.2){score++;placeCoin();}
+    coinG.rotation.y+=dt*3;
+    $('#time').textContent=Math.floor(t)+' dtk';
+    $('#score').textContent=score+' koin';
+  }else{
+    left-=dt;const r=runner;
+    const dP=Math.hypot(r.pos.x-P.pos.x,r.pos.z-P.pos.z);
+    r.cd-=dt;r.dash-=dt;
+    if(dP<4.5&&r.cd<=0){r.dash=.4;r.cd=3;}
+    let best=-1e9,bx=r.dx,bz=r.dz;
+    for(let i=0;i<16;i++){
+      const a=i/16*Math.PI*2,dx=Math.sin(a),dz=Math.cos(a);let s=0;
+      for(const L of[2,4]){
+        const px=r.pos.x+dx*L,pz=r.pos.z+dz*L,q={x:px,z:pz};resolve(q,.9);
+        s+=Math.hypot(px-P.pos.x,pz-P.pos.z)-Math.hypot(q.x-px,q.z-pz)*6
+          -Math.max(0,Math.abs(px)-13)*.8-Math.max(0,Math.abs(pz)-13)*.8;
+      }
+      s+=(dx*r.dx+dz*r.dz)*1.5;
+      if(s>best){best=s;bx=dx;bz=dz;}
+    }
+    r.dx+=(bx-r.dx)*Math.min(1,dt*7);r.dz+=(bz-r.dz)*Math.min(1,dt*7);
+    const l=Math.hypot(r.dx,r.dz)||1;r.dx/=l;r.dz/=l;
+    move(r,r.dx,r.dz,r.dash>0?8.2:5.2,dt,t);
+    $('#time').textContent=Math.max(0,Math.ceil(left))+' dtk';
+    $('#score').textContent=Math.round(dP)+' m';
+    if(dP<1.4){
+      const pts=Math.round(left*10);
+      finish('Tertangkap dia!','Kamu menangkap si pelari dengan sisa waktu '+left.toFixed(1)+' detik. Skor '+pts+(pts>getBest()?' (rekor baru!)':'')+'.',pts);
+    }else if(left<=0)finish('Waktu habis','Si pelari lolos. Coba pojokkan dia di dekat dinding dan pakai lari kencang.',0);
+  }
+}
+
+function updateCam(dt){
+  let fx=0,fz=0,h=24;
+  if(P){
+    fx=P.pos.x;fz=P.pos.z;
+    if(mode===2&&runner){
+      fx=(P.pos.x+runner.pos.x)/2;fz=(P.pos.z+runner.pos.z)/2;
+      h=Math.min(34,22+Math.hypot(P.pos.x-runner.pos.x,P.pos.z-runner.pos.z)*.5);
+    }
+  }else h=34;
+  const k=Math.min(1,dt*4);
+  cam.position.x+=(fx-cam.position.x)*k;
+  cam.position.y+=(h-cam.position.y)*k;
+  cam.position.z+=(fz+h*.55-cam.position.z)*k;
+  cam.lookAt(cam.position.x,0,cam.position.z-h*.55);
+}
+function resize(){renderer.setSize(innerWidth,innerHeight,false);cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();}
+addEventListener('resize',resize);resize();
+cam.position.set(0,34,18);
+
+let last=performance.now();
+(function loop(now){
+  const dt=Math.min(.05,(now-last)/1000);last=now;
+  if(state==='play')update(dt);
+  updateCam(dt);
+  renderer.render(scene,cam);
+  requestAnimationFrame(loop);
+})(last);
+</script>
+</body>
+</html>
